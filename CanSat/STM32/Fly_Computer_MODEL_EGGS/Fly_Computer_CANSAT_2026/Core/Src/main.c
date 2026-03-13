@@ -16,7 +16,13 @@
   ******************************************************************************
   */
 /* USER CODE END Header */
-/* Includes ------------------------------------------------------------------*/
+
+
+
+/*###################################################################################################################################################################*/
+/* Includes ##########################################################################################################################################################*/
+
+
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -27,50 +33,65 @@
 #include "sh2_hal.h"
 #include "sh2_SensorValue.h"
 #include "telemetry.h"
-
 /* USER CODE END Includes */
+/* ---------------------------------------------------------------------------*/
+
+
+/*###################################################################################################################################################################*/
+/* Private stuff ####################################################################################################################################################*/
+
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
 /* USER CODE END PTD */
+/* ---------------------------------------------------------------------------*/
+
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
 /* USER CODE END PD */
+/* ---------------------------------------------------------------------------*/
+
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
 /* USER CODE END PM */
+/* ---------------------------------------------------------------------------*/
 
-/* Private variables ---------------------------------------------------------*/
+
+
+/*###################################################################################################################################################################*/
+/* Private variables ################################################################################################################################################*/
+
+
 I2C_HandleTypeDef hi2c1;
-
 UART_HandleTypeDef huart2;
 
-/* USER CODE BEGIN PV */
 
+/* USER CODE BEGIN PV */
+/* Variables Volatiles ---------------------------------------------------------*/
 //VARIABLES VOLATILES DEBUG LECTURAS BME280
 volatile int32_t  g_t_centi = 0;   // temperatura en centi-°C (ej 2534 = 25.34°C)
 volatile uint32_t g_p_pa    = 0;   // presión en Pa
 volatile uint32_t g_h_centi = 0;   // humedad en centi-%RH (ej 4550 = 45.50%RH)
 volatile uint8_t  g_bme_ok  = 0;   // 1 si lectura OK
 
+
 //DEBUG BNO085 RESPUESTA I2C
-volatile uint8_t g_bno_addr = 0;      // 0x4A o 0x4B si se detecta, 0 si no
-volatile uint8_t g_bno_ok   = 0;      // 1 si responde por I2C, 0 si no
+volatile uint8_t g_bno_addr = 0;      // 0x4A o 0x4B si se detecta, 0 si novolatile uint8_t g_bno_ok   = 0;      // 1 si responde por I2C, 0 si no
+
 
 //DEBUG LECTURA DE VALORES BNO
 volatile uint8_t  g_bno_stream_ok = 0;
 volatile float    g_ax=0, g_ay=0, g_az=0;
 volatile float    g_gx=0, g_gy=0, g_gz=0;
 
+
 //DEBUG INTERRUPCIONES BNO
 static volatile uint8_t bno_int_flag = 0;
 static volatile uint32_t bno_int_time_us = 0;
 volatile uint32_t g_bno_last_check_ms = 0;
+
 
 //DEBUG LIBRERIA SH2
 volatile int g_sh2_open_rc = 999;
@@ -78,35 +99,44 @@ volatile uint32_t g_bno_reads = 0;
 volatile uint32_t g_bno_read_err = 0;
 volatile uint8_t g_bno_int_seen = 0;
 
+
 //DEBUG CONTADORES DE LECTURA BNO
 volatile uint32_t g_bno_writes = 0;
 volatile uint32_t g_bno_write_err = 0;
 
+
 volatile uint16_t g_bno_last_len = 0;
 volatile uint8_t  g_bno_hdr0 = 0, g_bno_hdr1 = 0, g_bno_chan = 0, g_bno_seq = 0;
+/* ---------------------------------------------------------------------------*/
 
 
-//DEFINICIONES DE PINES
+/* DEFINICION DE LOS PINES ---------------------------------------------------*/
 #define BNO_I2C_ADDR_7B  0x4B
 #define BNO_RST_GPIO_Port GPIOB
 #define BNO_RST_Pin       GPIO_PIN_9
-
+/* ---------------------------------------------------------------------------*/
 /* USER CODE END PV */
+
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART2_UART_Init(void);
+
 /* USER CODE BEGIN PFP */
-
 /* USER CODE END PFP */
+/* ---------------------------------------------------------------------------*/
 
-/* Private user code ---------------------------------------------------------*/
+
+
+/*###################################################################################################################################################################*/
+/* Private user code ################################################################################################################################################*/
+
+
 /* USER CODE BEGIN 0 */
 #define BNO085_ADDR_1 0x4A
 #define BNO085_ADDR_2 0x4B
-
 
 extern sh2_Hal_t g_sh2_hal;
 extern UART_HandleTypeDef huart2;
@@ -275,7 +305,10 @@ int _write(int file, char *ptr, int len) {
   return len;
 }
 
-// ---------- I2C helpers ----------
+
+
+/*###################################################################################################################################################################*/
+/* I2C helpers ######################################################################################################################################################*/
 
 
 static HAL_StatusTypeDef i2c_wr(uint8_t addr7, uint8_t reg, uint8_t *data, uint16_t len) {
@@ -291,7 +324,12 @@ static HAL_StatusTypeDef i2c_rd(uint8_t addr7, uint8_t reg, uint8_t *data, uint1
   return HAL_I2C_Master_Receive(&hi2c1, (addr7 << 1), data, len, 100);
 }
 
-// ---------- I2C scanner ----------
+
+
+/*###################################################################################################################################################################*/
+/* I2C scanner ######################################################################################################################################################*/
+
+
 static void i2c_scan(void) {
   printf("\r\nI2C scan...\r\n");
   for (uint8_t a = 1; a < 127; a++) {
@@ -301,7 +339,12 @@ static void i2c_scan(void) {
   }
 }
 
-// ---------- Minimal BME280 driver (fixed-point) ----------
+
+
+/*###################################################################################################################################################################*/
+/* BME20 drivers ####################################################################################################################################################*/
+
+
 #define BME280_ADDR  0x76
 
 // BME280 registers
@@ -439,8 +482,13 @@ static int bme280_read(int32_t *t_centi, uint32_t *p_pa, uint32_t *h_centi) {
   return 1;
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /* USER CODE END 0 */
+/* ---------------------------------------------------------------------------*/
+
+
+
+/*###################################################################################################################################################################*/
+/*###################################################################################################################################################################*/
 
 /**
   * @brief  The application entry point.
@@ -454,35 +502,33 @@ void debug_print(char *msg)
 
 int main(void)
 {
-
   /* USER CODE BEGIN 1 */
-
   /* USER CODE END 1 */
 
-  /* MCU Configuration--------------------------------------------------------*/
 
+  /* MCU Configuration--------------------------------------------------------*/
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
-
   /* USER CODE BEGIN Init */
-
   /* USER CODE END Init */
+
 
   /* Configure the system clock */
   SystemClock_Config();
-
   /* USER CODE BEGIN SysInit */
-
   /* USER CODE END SysInit */
+
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_I2C1_Init();
   MX_USART2_UART_Init();
+  /* ------------------------------------------------------------------------*/
+
+
   /* USER CODE BEGIN 2 */
   // 1) Abrir SH2
   g_sh2_open_rc = sh2_open(&g_sh2_hal, sh2_event_cb, NULL);
-
 
   // 2) Registrar callback de sensores
   sh2_setSensorCallback(sh2_sensor_cb, NULL);
@@ -507,10 +553,11 @@ int main(void)
   }
 
   printf("Tip: BNO085 no tiene 'WHOAMI' simple; si aparece en scan (0x4A/0x4B), al menos responde ACK.\r\n");
-
   /* USER CODE END 2 */
 
-  /* Infinite loop */
+
+  /*#################################################################################################################################################################*/
+  /* Infinite loop ##################################################################################################################################################*/
   /* USER CODE BEGIN WHILE */
 	  uint32_t t_bme = HAL_GetTick();
 	  while (1)
@@ -534,14 +581,16 @@ int main(void)
 	                  pkt.pressure);
 
 	    }
+	  /* USER CODE END WHILE */
 	  }
-    /* USER CODE END WHILE */
-
-    /* USER CODE BEGIN 3 */
-
+	  /* USER CODE BEGIN 3 */
+	  /* USER CODE END 3 */
   }
-  /* USER CODE END 3 */
 
+
+
+/*###################################################################################################################################################################*/
+/*###################################################################################################################################################################*/
 /**
   * @brief System Clock Configuration
   * @retval None
@@ -588,6 +637,10 @@ void SystemClock_Config(void)
   }
 }
 
+
+
+/*###################################################################################################################################################################*/
+/*###################################################################################################################################################################*/
 /**
   * @brief I2C1 Initialization Function
   * @param None
@@ -597,12 +650,13 @@ static void MX_I2C1_Init(void)
 {
 
   /* USER CODE BEGIN I2C1_Init 0 */
-
   /* USER CODE END I2C1_Init 0 */
 
-  /* USER CODE BEGIN I2C1_Init 1 */
 
+  /* USER CODE BEGIN I2C1_Init 1 */
   /* USER CODE END I2C1_Init 1 */
+
+
   hi2c1.Instance = I2C1;
   hi2c1.Init.ClockSpeed = 100000;
   hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
@@ -622,6 +676,10 @@ static void MX_I2C1_Init(void)
 
 }
 
+
+
+/*###################################################################################################################################################################*/
+/*###################################################################################################################################################################*/
 /**
   * @brief USART2 Initialization Function
   * @param None
@@ -631,12 +689,13 @@ static void MX_USART2_UART_Init(void)
 {
 
   /* USER CODE BEGIN USART2_Init 0 */
-
   /* USER CODE END USART2_Init 0 */
 
-  /* USER CODE BEGIN USART2_Init 1 */
 
+  /* USER CODE BEGIN USART2_Init 1 */
   /* USER CODE END USART2_Init 1 */
+
+
   huart2.Instance = USART2;
   huart2.Init.BaudRate = 115200;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
@@ -650,11 +709,13 @@ static void MX_USART2_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN USART2_Init 2 */
-
   /* USER CODE END USART2_Init 2 */
-
 }
 
+
+
+/*###################################################################################################################################################################*/
+/*###################################################################################################################################################################*/
 /**
   * @brief GPIO Initialization Function
   * @param None
@@ -664,8 +725,8 @@ static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
   /* USER CODE BEGIN MX_GPIO_Init_1 */
-
   /* USER CODE END MX_GPIO_Init_1 */
+
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOA_CLK_ENABLE();
@@ -691,8 +752,8 @@ static void MX_GPIO_Init(void)
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
-  /* USER CODE BEGIN MX_GPIO_Init_2 */
 
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
@@ -706,6 +767,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 }
 /* USER CODE END 4 */
 
+
+
+/*###################################################################################################################################################################*/
+/*###################################################################################################################################################################*/
 /**
   * @brief  This function is executed in case of error occurrence.
   * @retval None
@@ -721,6 +786,10 @@ void Error_Handler(void)
   /* USER CODE END Error_Handler_Debug */
 }
 
+
+
+/*###################################################################################################################################################################*/
+/*###################################################################################################################################################################*/
 #ifdef  USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
