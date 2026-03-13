@@ -1,6 +1,6 @@
 ################################################################################
 # Automatically-generated file. Do not edit!
-# Toolchain: GNU Tools for STM32 (13.3.rel1)
+# Toolchain: GNU Tools for STM32 (14.3.rel1)
 ################################################################################
 
 -include ../makefile.init
@@ -60,8 +60,8 @@ all: main-build
 main-build: Fly_Computer_CANSAT_2026.elf secondary-outputs
 
 # Tool invocations
-Fly_Computer_CANSAT_2026.elf Fly_Computer_CANSAT_2026.map: $(OBJS) $(USER_OBJS) C:\Users\anglc\STM32CubeIDE\workspace_1.18.0\Fly_Computer_CANSAT_2026\STM32F411CEUX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "Fly_Computer_CANSAT_2026.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\anglc\STM32CubeIDE\workspace_1.18.0\Fly_Computer_CANSAT_2026\STM32F411CEUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Fly_Computer_CANSAT_2026.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Fly_Computer_CANSAT_2026.elf Fly_Computer_CANSAT_2026.map: $(OBJS) $(USER_OBJS) /home/shuten-doji/Documents/Robotica/Robotica/CanSat/STM32/Fly_Computer_MODEL_EGGS/Fly_Computer_CANSAT_2026/STM32F411CEUX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "Fly_Computer_CANSAT_2026.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"/home/shuten-doji/Documents/Robotica/Robotica/CanSat/STM32/Fly_Computer_MODEL_EGGS/Fly_Computer_CANSAT_2026/STM32F411CEUX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Fly_Computer_CANSAT_2026.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

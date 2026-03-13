@@ -12,7 +12,18 @@ Mode currentMode = MODE_LORA;
 int telemetryCount = 0;
 int imageCount = 0;
 
+unit8_t protocolLoRa[7];
+unit8_t protocolFSK[4];
+
+
+
+
+
+
+
+// ===========================================================================================================
 // Modos
+
 void initLoRa() {
 
   // frecuencia en MHz
@@ -52,49 +63,56 @@ void initFSK() {
   Serial.println("Modo FSK: Imagen");
 }
 
+
+
+
+
+
+
+// ==========================================================================================================
 // Informacion de los sensores
 
-void bme280() {
+void bme280() { // Temperatura y precion
 
   // Wire.beginTransmission(...)
   // Leer registros BME280
-  // Convertir a temperatura/presión reales
+  // https://github.com/ProjectsByJRP/stm32-bme280/tree/master
+  // 
 
-  float temp = 20 + random(-5,5);
-  float pressure = 1013 + random(-10,10);
-
-  String packet = "Temperatura = " + String(temp) + "Presion = " + String(pressure);
-
-  radio.transmit(packet); //SX127x.cpp
-  Serial.println(packet);
+  // protocolLoRa[1] = temperatura;
+  // byte alto // protocolLoRa[4] = Presion >> 8;
+  // byte bajo // protocolLoRa[5] = Presion & 0xFF;
+  
 }
 
 void bno085() {
 
   // Lectura real IMU por I2C/SPI
-  // Obtener aceleraciones
+  // https://github.com/ufnalski/ahrs_bno085_g474re
+  // 
 
-  float ax = random(-10,10);
-  float ay = random(-10,10);
-
-  String packet = "IMU|AX=" + String(ax) + "|AY=" + String(ay);
-
-  radio.transmit(packet);
-  Serial.println(packet);
+  // byte alto // protocolLoRa[2] = Altitud >> 8;
+  // byte bajo // protocolLoRa[3] = Altitud & 0xFF;
+  
+  // Esto es lo que tenia antes (ax y ay siento que me serviran despues) // String packet = "IMU: Velocidad en X =" + String(ax) + "Velociad en Y =" + String(ay);
 }
 
 void esp32_image() {
 
   // UART con ESP32-CAM
-  // Recepción de fragmento JPEG real
+  // Envio de fragmento JPEG
 
-  String fragment = "Imagen = " + String(imageCount);
-
-  radio.transmit(fragment);
-  Serial.println(fragment);
+  // protocolFSK[1] = 0; // id
+  // protocolFSK[2] = 0; // data
 
   imageCount++;
 }
+
+
+
+
+
+
 
 // ===================================================================================================================================================
 
@@ -103,26 +121,55 @@ void setup() {
   Serial.begin(115200);
   delay(2000);
 
+   protocolLoRa[0] = 0; // Numero de paquete
+   protocolLoRa[1] = 0;
+   protocolLoRa[2] = 0;
+   protocolLoRa[3] = 0;
+   protocolLoRa[4] = 0;
+   protocolLoRa[5] = 0;
+   protocolLoRa[6] = 0; // Verificacion
+
+   protocolFSK[0] = 0; // Numero de paquete
+   protocolFSK[1] = 0; // id
+   protocolFSK[2] = 0; // data
+   protocolFSK[3] = 0; // Verificacion
+    
+  /* struct telemetria {
+    unit8_t numpaquet;
+    unit8_t temp;
+    unit16_t altitud;
+    unit16_t presion;
+    unit8_t verif;
+  }; */
+
+  /*
+  struct imagen {
+    unit8_t numpaquet;
+  }
+  */
+  
+  Serial.println(">>> Transmisor iniciado");
   initLoRa();
 }
+
+
+
+
+
 
 
 // ===================================================================================================================================================
 
 void loop() {
-
   if (currentMode == MODE_LORA) {
 
-    bme280();
-    delay(500);
+    protocolLoRa[0] = telemetryCount++; // Numero de paquete
+    protocolLoRa[6] = 0; // Verificacion
 
-    bno085();
-    delay(500);
-
-    telemetryCount++;
-
+    radio.transmit(protocolLoRa, 7);
+    // Cambiar Serial.println(protocolLoRa, 7);
+    
     if (telemetryCount >= 5) {
-      
       Serial.println(">>> Imagen >>>");
       initFSK();
       currentMode = MODE_FSK;
@@ -130,13 +177,16 @@ void loop() {
     }
   }
 
+
   else if (currentMode == MODE_FSK) {
 
-    esp32_image();
-    delay(200);
+    protocolFSK[0] = imageCount++;
+    protocolFSK[3] = 0;
 
+    radio.transmit(protocolFSK, 4);
+    // Cambiar Serial.println(protocolFSK);
+    
     if (imageCount >= 20) {
-
       Serial.println(">>> Telemetria >>>");
       initLoRa();
       currentMode = MODE_LORA;

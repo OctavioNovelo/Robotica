@@ -26,6 +26,8 @@
 #include "sh2.h"
 #include "sh2_hal.h"
 #include "sh2_SensorValue.h"
+#include "telemetry.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -107,6 +109,7 @@ static void MX_USART2_UART_Init(void);
 
 
 extern sh2_Hal_t g_sh2_hal;
+extern UART_HandleTypeDef huart2;
 
 static void sh2_event_cb(void *cookie, sh2_AsyncEvent_t *pEvent)
 {
@@ -436,13 +439,19 @@ static int bme280_read(int32_t *t_centi, uint32_t *p_pa, uint32_t *h_centi) {
   return 1;
 }
 
-
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /* USER CODE END 0 */
 
 /**
   * @brief  The application entry point.
   * @retval int
   */
+
+void debug_print(char *msg)
+{
+    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+}
+
 int main(void)
 {
 
@@ -506,12 +515,24 @@ int main(void)
 	  uint32_t t_bme = HAL_GetTick();
 	  while (1)
 	  {
+		debug_print("STM32 ALIVE\n");
+
+		TelemetryPacket pkt;
+
+		telemetry_build(&pkt, altitude, pressure, temperature);
+
 	    sh2_service();   // debe llamarse muy seguido
 
 	    if (HAL_GetTick() - t_bme >= 500)
 	    {
 	      t_bme += 500;
 	      g_bme_ok = bme280_read((int32_t*)&g_t_centi, (uint32_t*)&g_p_pa, (uint32_t*)&g_h_centi);
+
+	      debug_print("SEQ:%d ALT:%d PRES:%d\n",
+	                  pkt.seq,
+	                  pkt.altitude,
+	                  pkt.pressure);
+
 	    }
 	  }
     /* USER CODE END WHILE */
@@ -520,7 +541,6 @@ int main(void)
 
   }
   /* USER CODE END 3 */
-}
 
 /**
   * @brief System Clock Configuration
