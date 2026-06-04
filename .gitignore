@@ -1,0 +1,21 @@
+# STM32 build artifacts
+**/Debug/
+**/Release/
+*.elf
+*.list
+*.map
+*.o
+*.d
+*.su
+*.cyclo
+
+# Arduino build artifacts
+**/build/
+**/libraries/
+
+# Archives
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
