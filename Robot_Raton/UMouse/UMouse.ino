@@ -1,9 +1,9 @@
 // =============================================================
-//  UMouse.ino — Archivo principal (UI Completa)
+//  UMouse.ino — Archivo principal
+//  ESP32, Arduino-ESP32 core 3.x
 // =============================================================
 #include <Wire.h>
 #include <Adafruit_SSD1306.h>
-#include <Adafruit_BNO08x.h>
 #include <Preferences.h>
 #include <math.h>
 
@@ -11,32 +11,16 @@
 #include "config.h"
 #include "sensors.h"
 #include "motion.h"
+#include "motion_gyro.h"   // gyro (BNO085) implementado, pero aún NO conectado a floodfill.h ni maus.h
+#include "diagnostics.h"   // escaneo I2C + secuencia de prueba de motores (páginas PAGE_BNO / PAGE_MOTOR)
 #include "maus.h"
 #include "floodfill.h"
-#include "telemetry.h"
-
-// ── PINES Y DIRECCIONES BNO085 ───────────────────────────────
-#define PIN_BNO_INT 18  
-#define PIN_BNO_RST 38  
-#define BNO_ADDR_A  0x4A 
-#define BNO_ADDR_B  0x4B 
-#define BNO_REPORT_INTERVAL_US 10000 
 
 // ── GLOBALES ─────────────────────────────────────────────────
 Adafruit_SSD1306 display(OLED_W, OLED_H, &Wire, -1);
-Adafruit_BNO08x bno08x(PIN_BNO_RST); 
-sh2_SensorValue_t bnoEvent;          
-
-bool g_oledOK = false;
-bool g_bnoOK = false;
-uint8_t g_bnoAddr = 0;
-float g_yawDeg = 0.0f, g_pitchDeg = 0.0f, g_rollDeg = 0.0f; 
-float g_gyroX = 0.0f, g_gyroY = 0.0f, g_gyroZ = 0.0f;       
-float g_linAx = 0.0f, g_linAy = 0.0f, g_linAz = 0.0f;       
-uint32_t g_lastBNOms = 0;
 
 // ── BOOT ─────────────────────────────────────────────────────
-#define BOOT_PIN 0 
+#define BOOT_PIN 0
 inline bool bootDown(){ return digitalRead(BOOT_PIN)==LOW; }
 
 bool bootShortPress(){
@@ -52,6 +36,22 @@ bool bootLongPress(uint32_t ms){
   if(now&&!last) tD=millis();
   last=now;
   return now&&(millis()-tD>=ms);
+}
+
+// Lectura de BOOT con anti-rebote simple: el estado solo se considera
+// "cambiado" cuando la señal se mantiene estable por DEBOUNCE_MS.
+// Evita que un rebote mecánico del botón dispare parpadeo/falsos toggles
+// en la lógica de hold de PAGE_RUN.
+bool bootStable(){
+  static bool stable=false;
+  static bool lastRaw=false;
+  static uint32_t tChange=0;
+  const uint32_t DEBOUNCE_MS = 20;
+
+  bool raw = bootDown();
+  if(raw != lastRaw){ lastRaw = raw; tChange = millis(); }
+  if(millis()-tChange >= DEBOUNCE_MS) stable = raw;
+  return stable;
 }
 
 // ── NVS ──────────────────────────────────────────────────────
@@ -86,71 +86,9 @@ void loadWalls(){
   delay(500);
 }
 
-// ── LÓGICA BNO085 ────────────────────────────────────────────
-void quaternionToEulerDeg(float qr, float qi, float qj, float qk,
-                          float &yawDeg, float &pitchDeg, float &rollDeg) {
-  float sqi = qi * qi;
-  float sqj = qj * qj;
-  float sqk = qk * qk;
-  float roll = atan2f(2.0f * (qr * qi + qj * qk), 1.0f - 2.0f * (sqi + sqj));
-  float t2 = 2.0f * (qr * qj - qk * qi);
-  t2 = t2 < -1.0f ? -1.0f : (t2 > 1.0f ? 1.0f : t2);
-  float pitch = asinf(t2);
-  float yaw = atan2f(2.0f * (qr * qk + qi * qj), 1.0f - 2.0f * (sqj + sqk));
-  
-  yawDeg   = yaw   * 180.0f / PI;
-  pitchDeg = pitch * 180.0f / PI;
-  rollDeg  = roll  * 180.0f / PI;
-} 
-
-bool setBNOReports() {
-  if (!g_bnoOK) return false;
-  bool ok = true;
-  ok &= bno08x.enableReport(SH2_GAME_ROTATION_VECTOR, BNO_REPORT_INTERVAL_US);
-  ok &= bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED, BNO_REPORT_INTERVAL_US);
-  ok &= bno08x.enableReport(SH2_LINEAR_ACCELERATION, BNO_REPORT_INTERVAL_US);
-  return ok;
-} 
-
-void updateBNO() {
-  if (!g_bnoOK) return;
-  if (bno08x.wasReset()) setBNOReports();
-  for (uint8_t i = 0; i < 8; i++) {
-    if (!bno08x.getSensorEvent(&bnoEvent)) return;
-    g_lastBNOms = millis();
-    switch (bnoEvent.sensorId) {
-      case SH2_GAME_ROTATION_VECTOR:
-        quaternionToEulerDeg(
-          bnoEvent.un.gameRotationVector.real, bnoEvent.un.gameRotationVector.i,
-          bnoEvent.un.gameRotationVector.j, bnoEvent.un.gameRotationVector.k,
-          g_yawDeg, g_pitchDeg, g_rollDeg
-        );
-        break;
-      case SH2_GYROSCOPE_CALIBRATED:
-        g_gyroX = bnoEvent.un.gyroscope.x; g_gyroY = bnoEvent.un.gyroscope.y; g_gyroZ = bnoEvent.un.gyroscope.z;
-        break;
-      case SH2_LINEAR_ACCELERATION:
-        g_linAx = bnoEvent.un.linearAcceleration.x; g_linAy = bnoEvent.un.linearAcceleration.y; g_linAz = bnoEvent.un.linearAcceleration.z;
-        break;
-    }
-  }
-} 
-
-void initBNO() {
-  pinMode(PIN_BNO_INT, INPUT_PULLUP);
-  g_bnoOK = false;
-  if (bno08x.begin_I2C(BNO_ADDR_A, &Wire)) {
-    g_bnoOK = true; g_bnoAddr = BNO_ADDR_A;
-  } else if (bno08x.begin_I2C(BNO_ADDR_B, &Wire)) {
-    g_bnoOK = true; g_bnoAddr = BNO_ADDR_B;
-  }
-  if (g_bnoOK) setBNOReports();
-} 
-
-
 // ── PÁGINAS UI ───────────────────────────────────────────────
-// Integración de TODAS las páginas de diagnóstico de UMouse_S3_Test_BootMotor
-enum Page : uint8_t { PAGE_RUN=0, PAGE_STATUS, PAGE_IR_DIFF, PAGE_IR_RAW, PAGE_WALLS, PAGE_ENC, PAGE_BNO, PAGE_COUNT };
+// PAGE_RUN es la primera — más fácil acceso en campo
+enum Page : uint8_t { PAGE_RUN=0, PAGE_STATUS, PAGE_IR, PAGE_ENC, PAGE_BNO, PAGE_MOTOR, PAGE_COUNT };
 Page g_page = PAGE_RUN;
 
 void drawPageRun(float vbat){
@@ -162,9 +100,20 @@ void drawPageRun(float vbat){
   display.setCursor(0,32);
   display.print("Profile:"); display.println(PROFILE==1?"TEST":"COMP");
   display.setCursor(0,44);
-  display.println("HOLD: iniciar");
-  display.setCursor(0,54);
   display.println("SHORT: sig pagina");
+  display.display();
+}
+
+// Pantalla mostrada mientras se mantiene BOOT presionado en PAGE_RUN.
+// Muestra los DOS umbrales al mismo tiempo (no se alternan), junto con
+// el tiempo transcurrido, para que se pueda leer todo de un vistazo.
+void drawPageRunHold(uint32_t heldMs){
+  oledHeader("INICIAR / BORRAR");
+
+  display.setCursor(0,22);
+  display.println("SOLTAR = Floodfill");
+  display.setCursor(0,42);
+  display.println("MANTENER = Borrar NVS");
   display.display();
 }
 
@@ -173,117 +122,179 @@ void drawPageStatus(float vbat){
   display.setCursor(0,12);
   display.print("VBAT:"); display.print(vbat,2); display.print(" dMax:"); display.print(g_dutyMax);
   display.setCursor(0,22);
-  display.print("CELL:"); display.print((int)CELL_MM); display.print(" FWD:"); display.print((int)CELL_FWD_MM);
+  display.print("CELL:"); display.print((int)CELL_MM);
+  display.print(" FWD:"); display.print((int)CELL_FWD_MM);
   display.setCursor(0,32);
-  display.print("Pre:"); display.print(ENC_PRESHIFT); display.print(" T90:"); display.print(ENC_TURN90);
+  display.print("Pre:"); display.print(ENC_PRESHIFT);
+  display.print(" T90:"); display.print(ENC_TURN90);
   display.setCursor(0,42);
-  display.print("OLED:"); display.print(g_oledOK?"OK":"NO"); display.print(" BNO:"); display.print(g_bnoOK?"OK":"NO"); //
+  display.print("FWD_PWM:"); display.print(FWD_PWM);
+  display.print(" TRIM:"); display.print(ENC_TRIM_R,3);
   display.setCursor(0,52);
-  display.print("KP:"); display.print(KP_ENC,2); display.print(" KI:"); display.print(KI_ENC,2);
+  display.print("KP:"); display.print(KP_ENC,2);
+  display.print(" KI:"); display.print(KI_ENC,2);
   display.display();
 }
 
-void drawPageIRDiff(){
+void drawPageIR(){
   readIR();
-  oledHeader("IR DIFF mV"); //
+  oledHeader("IR");
   display.setCursor(0,12);
-  display.print("FL:"); display.print(irFL); display.print("  FR:"); display.print(irFR); //
-  display.setCursor(0,24);
-  display.print("L :"); display.print(irL);  display.print("  R :"); display.print(irR); //
-  display.setCursor(0,38);
-  display.print("C(Fusion):"); display.print(irC);
-  display.display();
-}
-
-void drawPageIRRaw(){
-  readIR();
-  oledHeader("IR RAW OFF/ON"); //
-  display.setCursor(0, 12);
-  display.print("FL "); display.print(offFL); display.print("/"); display.print(onFL); //
-  display.setCursor(0, 22);
-  display.print("FR "); display.print(offFR); display.print("/"); display.print(onFR); //
-  display.setCursor(0, 34);
-  display.print("L  "); display.print(offL);  display.print("/"); display.print(onL); //
-  display.setCursor(0, 44);
-  display.print("R  "); display.print(offR);  display.print("/"); display.print(onR); //
-  display.display();
-}
-
-void drawPageWalls(){
-  readIR();
-  oledHeader("PAREDES IR"); //
-  display.setCursor(0, 12);
-  display.print("FL:"); display.print(irFL >= IR_WALL_THR_FL ? "Y" : "N"); //
-  display.print(" FR:"); display.print(irFR >= IR_WALL_THR_FR ? "Y" : "N"); //
-  display.print(" F:"); display.print(hasWallFront() ? "Y" : "N"); //
-  display.setCursor(0, 24);
-  display.print("L:"); display.print(hasWallLeft() ? "Y" : "N"); //
-  display.print(" R:"); display.print(hasWallRight() ? "Y" : "N"); //
-  display.setCursor(0, 38);
-  display.print("Thr FL/FR:"); display.print(IR_WALL_THR_FL); display.print("/"); display.print(IR_WALL_THR_FR); //
-  display.setCursor(0, 52);
-  display.print("Thr L/R:"); display.print(IR_WALL_THR_L); display.print("/"); display.print(IR_WALL_THR_R); //
+  display.print("FL:"); display.print(irFL);
+  display.print(" FR:"); display.print(irFR);
+  display.setCursor(0,22);
+  display.print("L:"); display.print(irL);
+  display.print(" R:"); display.print(irR);
+  display.setCursor(0,34);
+  display.print("WL:"); display.print(hasWallLeft()?"Y":"N");
+  display.print(" WF:"); display.print(hasWallFront()?"Y":"N");
+  display.print(" WR:"); display.print(hasWallRight()?"Y":"N");
+  display.setCursor(0,46);
+  display.print("TFL:"); display.print(IR_WALL_THR_FL);
+  display.print(" TFR:"); display.print(IR_WALL_THR_FR);
+  display.setCursor(0,56);
+  display.print("TL:"); display.print(IR_WALL_THR_L);
+  display.print(" TR:"); display.print(IR_WALL_THR_R);
   display.display();
 }
 
 void drawPageEnc(){
   long l,lA,r,rA; getEncAll(l,lA,r,rA);
-  oledHeader("ENCODERS"); //
-  display.setCursor(0, 12);
-  display.print("L: "); display.print(l); display.print(" abs:"); display.print(lA); //
-  display.setCursor(0, 26);
-  display.print("R: "); display.print(r); display.print(" abs:"); display.print(rA); //
-  display.setCursor(0, 42);
-  display.print("Mant BOOT: reset"); //
+  oledHeader("ENCODERS");
+  display.setCursor(0,12);
+  display.print("L:"); display.print(l); display.print("/"); display.print(lA);
+  display.setCursor(0,22);
+  display.print("R:"); display.print(r); display.print("/"); display.print(rA);
+  display.setCursor(0,36);
+  display.println("HOLD: reset encoders");
   display.display();
 }
 
-void drawPageBNO() {
-  oledHeader("BNO085"); //
-  if (!g_bnoOK) {
-    display.setCursor(0, 24);
-    display.println("BNO NO DETECTADO");
-    display.display();
-    return;
-  }
-  display.setCursor(0, 12);
-  display.print("Yaw:"); display.print(g_yawDeg, 1); display.print(" P:"); display.print(g_pitchDeg, 1); //
-  display.setCursor(0, 24);
-  display.print("Roll:"); display.print(g_rollDeg, 1); //
-  display.setCursor(0, 36);
-  display.print("Gz:"); display.print(g_gyroZ, 2); display.print(" rad/s"); //
-  display.setCursor(0, 48);
-  display.print("Ax:"); display.print(g_linAx, 1); display.print(" Ay:"); display.print(g_linAy, 1); //
+void drawPageBNO(){
+  gyroUpdate();
+  oledHeader("BNO085");
+  display.setCursor(0,12);
+  display.print("Addr:");
+  if(g_gyroReady) display.printf("0x%02X", g_bnoAddr); else display.print("--");
+  display.print(" OK:"); display.print(g_gyroReady ? "Y" : "N");
+
+  display.setCursor(0,22);
+  display.print("Yaw:"); display.print(g_yawDeg,1);
+  display.print(" P:"); display.print(g_pitchDeg,1);
+
+  display.setCursor(0,32);
+  display.print("Roll:"); display.print(g_rollDeg,1);
+
+  display.setCursor(0,42);
+  display.print("Gz:"); display.print(g_gyroZ,2); display.print(" rad/s");
+
+  display.setCursor(0,52);
+  display.print("Ax:"); display.print(g_linAx,1);
+  display.print(" Ay:"); display.print(g_linAy,1);
   display.display();
-} 
+}
+
+void drawPageMotor(){
+  float vbat = readVBAT_V();
+  int testPWM = calcMotorTestPWM();
+
+  oledHeader("MOTORES");
+  display.setCursor(0,12);
+  display.print("VB:"); display.print(vbat,1);
+  display.print(" Max:"); display.print(g_dutyMax);
+
+  display.setCursor(0,22);
+  display.print("Test:"); display.print(testPWM);
+  display.print(" "); display.print(g_motorTestPercent); display.print("%");
+
+  display.setCursor(0,32);
+  display.print("Modo:"); display.print(g_motorState);
+
+  display.setCursor(0,42);
+  display.print("Cmd L:"); display.print(g_motorCmdL);
+  display.print(" R:"); display.print(g_motorCmdR);
+
+  display.setCursor(0,52);
+  display.print("HOLD: secuencia");
+  display.display();
+}
+
+// Llamada en vivo desde motorTimedTest()/motorFullSequenceTest() (diagnostics.h)
+// mientras corre la prueba, para refrescar el progreso en pantalla.
+void drawMotorTestStage(const char *stage, int pwm, uint32_t elapsedMs, uint32_t totalMs){
+  long l,lA,r,rA; getEncAll(l,lA,r,rA);
+
+  oledHeader("TEST MOTORES");
+  display.setCursor(0,12);
+  display.print(stage);
+
+  display.setCursor(0,24);
+  display.print("PWM:"); display.print(pwm);
+  display.print(" Max:"); display.print(g_dutyMax);
+
+  display.setCursor(0,36);
+  display.print("L:"); display.print(lA);
+  display.print(" R:"); display.print(rA);
+
+  display.setCursor(0,48);
+  if(totalMs > 0){
+    uint8_t pct = (uint8_t)ci((int)((elapsedMs * 100UL) / totalMs), 0, 100);
+    display.print("Progreso: "); display.print(pct); display.print("%");
+  } else {
+    display.print("Mantente listo");
+  }
+  display.display();
+}
+
+void drawMotorTestResult(){
+  oledHeader("RESULTADO MOTOR");
+  display.setCursor(0,12);
+  display.print("Ticks L:"); display.print(g_lastMotorTicksL);
+  display.setCursor(0,24);
+  display.print("Ticks R:"); display.print(g_lastMotorTicksR);
+  display.setCursor(0,36);
+  display.print("RPM L:"); display.print(g_lastRpmL,0);
+  display.print(" R:"); display.print(g_lastRpmR,0);
+  display.setCursor(0,52);
+  display.print("SHORT: salir");
+  display.display();
+}
 
 // ── SETUP ────────────────────────────────────────────────────
 void setup(){
+  Serial.begin(115200);
+  delay(300);
+  Serial.println("\nArrancando UMouse ESP32-S3...");
+
   pinMode(BOOT_PIN, INPUT_PULLUP);
-  
-  Wire.begin(I2C_SDA, I2C_SCL); 
+  Wire.begin(I2C_SDA, I2C_SCL);
   Wire.setClock(400000);
-  
-  g_oledOK = display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
-  if (g_oledOK) oledShow("UMouse","iniciando...");
+  display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
+  oledShow("UMouse","iniciando...");
   delay(300);
 
   sensorsInit();
   motionInit();
-  initBNO(); 
-  initTelemetry();
+
+  // Escaneo I2C de diagnóstico — confirma por Serial que OLED (0x3C) y
+  // BNO085 (0x4A/0x4B) responden antes de intentar inicializarlos.
+  scanI2C(true);
+
+  // BNO085 — solo se toca si NAV_MODE lo requiere (ver settings.h). En
+  // NAV_MODE==1 (solo encoders) NI SIQUIERA SE LLAMA gyroInit() — ni se
+  // toca el pin de reset — para aislar por completo si el BNO es la
+  // causa de reinicios/fallas del sistema.
+  if(NAV_USE_GYRO){
+    gyroInit();
+  } else {
+    oledShow("BNO085","desactivado");
+    delay(600);
+  }
 
   float vbat = readVBAT_V();
   g_dutyMax  = calcDutyMax(vbat);
   if(g_dutyMax<20) g_dutyMax=20;
 
-  if(bootDown()){
-    oledShow("BOOT: soltar","para borrar NVS");
-    delay(1200);
-    if(bootDown()){ clearAndSaveWalls();
-    oledShow("NVS borrado",""); delay(800); }
-    while(bootDown()) delay(10);
-  }
 
   loadWalls();
   oledShow("Listo","");
@@ -291,57 +302,125 @@ void setup(){
 }
 
 // ── LOOP ─────────────────────────────────────────────────────
+// ── LOOP ─────────────────────────────────────────────────────
 void loop(){
-  updateBNO();
-  if (g_wifiConnected) webSocket.loop();
-  
+  // VBAT cada 500ms
   static uint32_t tV=0; static float vbat=0.0f;
   if(millis()-tV>500){
     tV=millis(); vbat=readVBAT_V();
     int dm=calcDutyMax(vbat); if(dm<20) dm=20; g_dutyMax=dm;
   }
 
+  // Gyro: mantener g_yawDeg fresco si el BNO está listo, y vigilar que no
+  // se quede "zombie" — todo esto solo corre si NAV_MODE lo requiere
+  // (ver settings.h). En NAV_MODE==1 esta rama nunca se ejecuta y el
+  // BNO queda completamente sin tocar durante todo el funcionamiento.
+  static uint32_t tGyro=0;
+  if(NAV_USE_GYRO && millis()-tGyro>100){
+    tGyro=millis();
+    if(g_gyroReady) gyroUpdate();
+    gyroWatchdog();
+  }
+
+  // Cambio de página
   if(bootShortPress()){
     g_page=(Page)((g_page+1)%PAGE_COUNT);
   }
 
+  // Acción PAGE_ENC: long press = reset encoders
   if(g_page==PAGE_ENC && bootLongPress(800)){
     while(bootDown()) delay(10);
     resetEncoders();
     oledShow("Encoders","reseteados"); delay(400);
   }
 
-  if(g_page==PAGE_RUN && bootLongPress(1500)){
+  // Acción PAGE_MOTOR: long press = secuencia completa de prueba
+  // (coast, adelante, freno, reversa, freno, coast), luego muestra
+  // ticks/RPM medidos y espera un toque corto para volver a la página.
+  if(g_page==PAGE_MOTOR && bootLongPress(1200)){
     while(bootDown()) delay(10);
-    oledShow("Iniciando","floodfill...");
-    delay(400);
-
-    Maus maus;
-    maus.coords[0]=MOUSE_ROW;
-    maus.coords[1]=MOUSE_COL;
-    maus.direction=MOUSE_START_DIRECTION;
-
-    const int goal[2]={GOAL_ROW,GOAL_COL};
-    Floodfill flood(g_walls,goal,&maus,g_explored);
-    ff_initialAdvance();
-    flood.solve();
-
-    g_explored=true;
-    oledShow("Completado!","SHORT: UI");
-    while(!bootShortPress()) delay(50);
+    motorFullSequenceTest();
+    drawMotorTestResult();
+    delay(1200);
   }
 
+  // Acción PAGE_RUN: 
+  // - Si se mantiene >= 3s: borra NVS de inmediato y espera a que se suelte.
+  // - Si se soltó entre 1.5s y 3s: inicia el floodfill.
+  static bool holdDown = false;
+  static uint32_t tHoldStart = 0;
+  bool bootHeldNow = false;
+  uint32_t heldMs = 0;
+
+  // CORRECCIÓN CLAVE: Usar bootStable() para saber si está presionado, no bootShortPress
+  bool down = bootStable();
+
+  if(g_page != PAGE_RUN){
+    holdDown = false;
+  } else {
+    if(down && !holdDown) tHoldStart = millis();
+    bootHeldNow = down;
+    heldMs = down ? (millis() - tHoldStart) : 0;
+
+    // 1. Borrado NVS: se activa en cuanto llegas a 3000 ms (3s) presionado
+    if(down && heldMs >= 3000){
+      clearAndSaveWalls();
+      oledShow("NVS borrado","mapa nuevo");
+      delay(800); 
+      
+      while(bootDown()) delay(10); // Espera activa a que sueltes el botón
+      
+      // Reseteamos el estado para que el Floodfill no se dispare al soltar
+      holdDown = false; 
+      down = false;     
+      bootHeldNow = false;
+    }
+    // 2. Floodfill: se activa solo si sueltas el botón entre 1.5s y 3s
+    else if(!down && holdDown){
+      uint32_t held = millis() - tHoldStart;
+
+      if(held >= 1500 && held < 3000){
+        oledShow("Iniciando","floodfill...");
+        delay(400);
+
+        Maus maus;
+        maus.coords[0]=MOUSE_ROW;
+        maus.coords[1]=MOUSE_COL;
+        maus.direction=MOUSE_START_DIRECTION;
+
+        const int goal[2]={GOAL_ROW,GOAL_COL};
+        Floodfill flood(g_walls,goal,&maus,g_explored);
+        ff_initialAdvance();
+        flood.solve();
+
+        g_explored=true;
+        ledBlink(ledBlanco, 3);
+        oledShow("Completado!","SHORT: UI");
+        while(!bootShortPress()) delay(50);
+      }
+    }
+
+    holdDown = down;
+  }
+
+// Refresco UI 120ms — Muestra la pantalla correspondiente
   static uint32_t tUI=0;
   if(millis()-tUI<120) return;
   tUI=millis();
-  switch(g_page){
-    case PAGE_RUN:     drawPageRun(vbat);    break;
-    case PAGE_STATUS:  drawPageStatus(vbat); break;
-    case PAGE_IR_DIFF: drawPageIRDiff();     break;
-    case PAGE_IR_RAW:  drawPageIRRaw();      break;
-    case PAGE_WALLS:   drawPageWalls();      break;
-    case PAGE_ENC:     drawPageEnc();        break;
-    case PAGE_BNO:     drawPageBNO();        break;
-    default: break;
+
+  // CORRECCIÓN: Solo mostramos la pantalla de "Mantener" si el botón 
+  // lleva presionado más de 250ms. Esto evita el parpadeo con toques rápidos.
+  if(g_page==PAGE_RUN && bootHeldNow && heldMs > 250){
+    drawPageRunHold(heldMs); // Muestra el mensaje de INICIAR / BORRAR
+  } else {
+    switch(g_page){
+      case PAGE_RUN:    drawPageRun(vbat);    break;
+      case PAGE_STATUS: drawPageStatus(vbat); break;
+      case PAGE_IR:     drawPageIR();         break;
+      case PAGE_ENC:    drawPageEnc();        break;
+      case PAGE_BNO:    drawPageBNO();        break;
+      case PAGE_MOTOR:  drawPageMotor();      break;
+      default: break;
+    }
   }
 }

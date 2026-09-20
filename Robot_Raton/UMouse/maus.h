@@ -1,3 +1,5 @@
+#pragma once
+
 // --------- Prototipos de las funciones definidas en el .ino ---------
 void ff_moveForwardOneCell();
 void ff_turnLeft90();

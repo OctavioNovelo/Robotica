@@ -1,4 +1,7 @@
+#pragma once
+
 void saveWallsToFlash();  // definida en UMouse.ino
+
 class Floodfill
 {
 private:
