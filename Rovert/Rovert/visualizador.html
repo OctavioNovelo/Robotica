@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VL53L8 - Visor 8x8</title>
+<style>
+  :root {
+    --bg: #f5f5f4;
+    --panel: #ffffff;
+    --border: #d6d3d1;
+    --text: #1c1917;
+    --muted: #78716c;
+    --accent: #0d9488;
+    --cell-empty: #e7e5e4;
+    --cell-empty-text: #a8a29e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1c1917;
+      --panel: #292524;
+      --border: #44403c;
+      --text: #f5f5f4;
+      --muted: #a8a29e;
+      --accent: #2dd4bf;
+      --cell-empty: #292524;
+      --cell-empty-text: #57534e;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1c1917;
+    --panel: #292524;
+    --border: #44403c;
+    --text: #f5f5f4;
+    --muted: #a8a29e;
+    --accent: #2dd4bf;
+    --cell-empty: #292524;
+    --cell-empty-text: #57534e;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 1.5rem 1rem;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+  }
+
+  header { text-align: center; }
+  h1 { margin: 0 0 .25rem; font-size: 1.25rem; font-weight: 650; }
+  .sub { margin: 0; color: var(--muted); font-size: .85rem; }
+
+  .controls {
+    display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; justify-content: center;
+  }
+  button {
+    font: inherit; font-size: .9rem; padding: .5rem .95rem;
+    border-radius: .5rem; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #0c0a09; font-weight: 600; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+
+  .status {
+    font-size: .82rem; color: var(--muted);
+    padding: .4rem .7rem; border: 1px solid var(--border);
+    border-radius: .4rem; background: var(--panel);
+    min-width: 13rem; text-align: center;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 4px;
+    width: min(92vw, 440px);
+    aspect-ratio: 1;
+    padding: 6px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: .6rem;
+  }
+  .cell {
+    display: flex; align-items: center; justify-content: center;
+    border-radius: .3rem;
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(.6rem, 2.1vw, .82rem);
+    font-weight: 600;
+    background: var(--cell-empty);
+    color: var(--cell-empty-text);
+    transition: background-color .08s linear, color .08s linear;
+  }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: .75rem;
+    font-size: .78rem; color: var(--muted); align-items: center; justify-content: center;
+  }
+  .legend span { display: flex; align-items: center; gap: .3rem; }
+  .sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+
+  .note {
+    max-width: 30rem; font-size: .78rem; color: var(--muted);
+    line-height: 1.5; text-align: center;
+  }
+  code {
+    background: var(--cell-empty); padding: .1rem .3rem;
+    border-radius: .25rem; font-size: .95em;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>VL53L8 &mdash; matriz 8&times;8 en vivo</h1>
+  <p class="sub">Distancia en milimetros por zona</p>
+</header>
+
+<div class="controls">
+  <button id="btnConnect" class="primary">Conectar al ESP32</button>
+  <button id="btnDisconnect" disabled>Desconectar</button>
+  <span class="status" id="status">Sin conectar</span>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<div class="legend">
+  <span><i class="sw" style="background:#dc2626"></i> &lt; 100 mm</span>
+  <span><i class="sw" style="background:#ea580c"></i> 300</span>
+  <span><i class="sw" style="background:#eab308"></i> 600</span>
+  <span><i class="sw" style="background:#22c55e"></i> 1200</span>
+  <span><i class="sw" style="background:#3b82f6"></i> 2500</span>
+  <span><i class="sw" style="background:#6366f1"></i> &gt; 3000 mm</span>
+  <span><i class="sw" style="background:var(--cell-empty)"></i> sin lectura</span>
+</div>
+
+<p class="note">
+  Requiere Chrome o Edge (Web Serial). Cierra el Monitor Serie de VS Code antes
+  de conectar: el puerto solo admite un programa a la vez. El firmware debe ser
+  <code>03_vl53l8_csv.ino</code>.
+</p>
+
+<script>
+(function () {
+  const COLS = 8, ROWS = 8, TOTAL = COLS * ROWS;
+  const gridEl = document.getElementById('grid');
+  const statusEl = document.getElementById('status');
+  const btnConnect = document.getElementById('btnConnect');
+  const btnDisconnect = document.getElementById('btnDisconnect');
+
+  // Construimos las 64 celdas UNA sola vez. A partir de aqui solo
+  // mutamos textContent y color de fondo, nunca el layout.
+  const cells = [];
+  for (let i = 0; i < TOTAL; i++) {
+    const d = document.createElement('div');
+    d.className = 'cell';
+    d.textContent = '--';
+    gridEl.appendChild(d);
+    cells.push(d);
+  }
+
+  // Escala de color por distancia. Puntos de control en mm.
+  const STOPS = [
+    [0,    [220,  38,  38]],
+    [300,  [234,  88,  12]],
+    [600,  [234, 179,   8]],
+    [1200, [ 34, 197,  94]],
+    [2500, [ 59, 130, 246]],
+    [4000, [ 99, 102, 241]]
+  ];
+
+  function colorFor(mm) {
+    if (mm <= STOPS[0][0]) return STOPS[0][1];
+    for (let i = 0; i < STOPS.length - 1; i++) {
+      const [a, ca] = STOPS[i], [b, cb] = STOPS[i + 1];
+      if (mm <= b) {
+        const t = (mm - a) / (b - a);
+        return [
+          Math.round(ca[0] + (cb[0] - ca[0]) * t),
+          Math.round(ca[1] + (cb[1] - ca[1]) * t),
+          Math.round(ca[2] + (cb[2] - ca[2]) * t)
+        ];
+      }
+    }
+    return STOPS[STOPS.length - 1][1];
+  }
+
+  // Texto oscuro sobre fondos claros, claro sobre oscuros.
+  function textOn([r, g, b]) {
+    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return lum > 0.6 ? '#1c1917' : '#ffffff';
+  }
+
+  // Guardamos el ultimo frame para no tocar el DOM si nada cambio.
+  const prev = new Array(TOTAL).fill(null);
+
+  function render(valores) {
+    for (let i = 0; i < TOTAL; i++) {
+      const v = valores[i];
+      if (prev[i] === v) continue;
+      prev[i] = v;
+
+      const cell = cells[i];
+      if (v === null) {
+        cell.textContent = '--';
+        cell.style.backgroundColor = '';
+        cell.style.color = '';
+      } else {
+        const c = colorFor(v);
+        cell.textContent = v;
+        cell.style.backgroundColor = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+        cell.style.color = textOn(c);
+      }
+    }
+  }
+
+  // --- Contador de frames por segundo ---
+  let frames = 0, lastTick = performance.now(), fps = 0;
+  function tickFps() {
+    const now = performance.now();
+    if (now - lastTick >= 1000) {
+      fps = frames;
+      frames = 0;
+      lastTick = now;
+      if (port) statusEl.textContent = 'Conectado \u2014 ' + fps + ' fps';
+    }
+  }
+
+  function parseLine(line) {
+    line = line.trim();
+    if (!line) return;
+
+    if (line.charAt(0) === 'E') {
+      statusEl.textContent = 'Error del sensor: ' + line.slice(2);
+      return;
+    }
+    if (line.charAt(0) !== 'F') return;
+
+    const partes = line.split(',');
+    if (partes.length !== TOTAL + 1) return;   // frame truncado, lo ignoramos
+
+    const valores = new Array(TOTAL);
+    for (let i = 0; i < TOTAL; i++) {
+      const p = partes[i + 1];
+      const sep = p.indexOf(':');
+      if (sep < 0) { valores[i] = null; continue; }
+      const mm = parseInt(p.slice(0, sep), 10);
+      const st = parseInt(p.slice(sep + 1), 10);
+      // 5 = medicion valida, 9 = valida con señal baja
+      valores[i] = (st === 5 || st === 9) && !isNaN(mm) ? mm : null;
+    }
+
+    render(valores);
+    frames++;
+    tickFps();
+  }
+
+  // --- Web Serial ---
+  let port = null, reader = null, keepReading = false;
+
+  async function connect() {
+    if (!('serial' in navigator)) {
+      statusEl.textContent = 'Este navegador no soporta Web Serial';
+      return;
+    }
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+    } catch (err) {
+      statusEl.textContent = 'No se pudo abrir el puerto';
+      port = null;
+      return;
+    }
+
+    btnConnect.disabled = true;
+    btnDisconnect.disabled = false;
+    statusEl.textContent = 'Conectado \u2014 esperando datos';
+
+    keepReading = true;
+    readLoop();
+  }
+
+  async function readLoop() {
+    const decoder = new TextDecoderStream();
+    const closed = port.readable.pipeTo(decoder.writable).catch(() => {});
+    reader = decoder.readable.getReader();
+
+    let buffer = '';
+    try {
+      while (keepReading) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += value;
+
+        let nl;
+        while ((nl = buffer.indexOf('\n')) >= 0) {
+          parseLine(buffer.slice(0, nl));
+          buffer = buffer.slice(nl + 1);
+        }
+        // Proteccion por si nunca llega un salto de linea
+        if (buffer.length > 4096) buffer = '';
+      }
+    } catch (err) {
+      statusEl.textContent = 'Lectura interrumpida';
+    } finally {
+      try { reader.releaseLock(); } catch (e) {}
+      await closed;
+    }
+  }
+
+  async function disconnect() {
+    keepReading = false;
+    try { if (reader) await reader.cancel(); } catch (e) {}
+    try { if (port) await port.close(); } catch (e) {}
+    port = null;
+    reader = null;
+    btnConnect.disabled = false;
+    btnDisconnect.disabled = true;
+    statusEl.textContent = 'Desconectado';
+    prev.fill(null);
+    render(new Array(TOTAL).fill(null));
+  }
+
+  btnConnect.addEventListener('click', connect);
+  btnDisconnect.addEventListener('click', disconnect);
+})();
+</script>
+
+</body>
+</html>
