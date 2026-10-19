@@ -47,6 +47,11 @@ struct BnoData {
   float linAx = 0, linAy = 0, linAz = 0;     // m/s^2
   uint8_t  accuracy   = 0;                   // 0-3 (bits 1-0 de status del reporte)
   uint32_t lastYawMs  = 0;
+  // diagnóstico
+  uint32_t lastPollMs = 0, pollRunStart = 0;  // ¿se está sondeando de forma continua?
+  uint16_t maxGapMs   = 0;                    // mayor tiempo SIN yaw mientras se sondeaba continuo
+  uint32_t yawCount   = 0;                    // reportes de yaw recibidos
+  float    rateYaw    = 0; uint32_t rateT = 0; // derivar velocidad angular del yaw
   uint16_t resets     = 0;                   // resets inesperados detectados
   uint8_t  recoveries = 0;                   // power-cycles en runtime
   bool     needRebase = false;               // el BNO se reinició: yaw ya no es válido
@@ -73,9 +78,27 @@ inline void bnoBootPowerCycle(){
 #endif
 }
 
+// Libera un bus trabado: si un esclavo (BNO u OLED) quedó a media transacción reteniendo
+// SDA en bajo (reset/brownout a mitad de lectura), ningún Wire.begin lo arregla. Estándar
+// I2C: hasta 9 pulsos de SCL hasta que SDA se suelte, y luego una condición STOP.
+inline void i2cBusClear(){
+  pinMode(I2C_SCL, INPUT_PULLUP);
+  pinMode(I2C_SDA, INPUT_PULLUP);
+  delayMicroseconds(10);
+  for(int i = 0; i < 9 && digitalRead(I2C_SDA) == LOW; i++){
+    pinMode(I2C_SCL, OUTPUT); digitalWrite(I2C_SCL, LOW); delayMicroseconds(5);
+    pinMode(I2C_SCL, INPUT_PULLUP);                       delayMicroseconds(5);
+  }
+  pinMode(I2C_SDA, OUTPUT); digitalWrite(I2C_SDA, LOW);   delayMicroseconds(5);   // STOP
+  pinMode(I2C_SCL, INPUT_PULLUP);                         delayMicroseconds(5);
+  pinMode(I2C_SDA, INPUT_PULLUP);                         delayMicroseconds(5);
+}
+
 inline void i2cBegin(){                 // pasos 6 del PDF: I2C DESPUÉS de energizar
+  i2cBusClear();                        // por si el reset dejó SDA retenida
   Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setClock(400000);
+  Wire.setClock(I2C_CLOCK_HZ);
+  Wire.setTimeOut(I2C_TIMEOUT_MS);
 }
 
 // ── Reportes ─────────────────────────────────────────────────
@@ -83,8 +106,10 @@ inline bool bnoSetReports(){
   bool ok = true;
   // Game rotation vector: sin magnetómetro (mejor cerca de motores/imanes)
   ok &= bno08x.enableReport(SH2_GAME_ROTATION_VECTOR,  BNO_REPORT_US);
+#if BNO_EXTRA_REPORTS
   ok &= bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED,  BNO_REPORT_US);
   ok &= bno08x.enableReport(SH2_LINEAR_ACCELERATION,   BNO_ACCEL_US);
+#endif
   return ok;
 }
 
@@ -125,6 +150,16 @@ inline bool bnoInit(){
 // ── Lectura ──────────────────────────────────────────────────
 inline void bnoPoll(uint8_t maxEvents){
   if(g_bno.state != BNO_ST_OK) return;
+  // Diagnóstico: mientras se sondea de forma continua (<30 ms entre llamadas), ¿cuánto
+  // tiempo pasa sin recibir yaw? Un valor alto = el BNO se calló (reset/ruido/bus).
+  {
+    uint32_t now = millis();
+    if(now - g_bno.lastPollMs > 30) g_bno.pollRunStart = now;
+    g_bno.lastPollMs = now;
+    uint32_t ref = (g_bno.lastYawMs > g_bno.pollRunStart) ? g_bno.lastYawMs : g_bno.pollRunStart;
+    uint32_t starve = now - ref;
+    if(starve > g_bno.maxGapMs) g_bno.maxGapMs = (starve > 65535) ? 65535 : (uint16_t)starve;
+  }
   if(bno08x.wasReset()){                // reset inesperado: yaw vuelve a 0
     g_bno.resets++;
     g_bno.needRebase = true;
@@ -141,7 +176,21 @@ inline void bnoPoll(uint8_t maxEvents){
                        g_bno.yawRaw, g_bno.pitch, g_bno.roll);
         g_bno.accuracy  = bnoEvent.status & 0x03;
         g_bno.lastYawMs = millis();
+        g_bno.yawCount++;
+#if !BNO_EXTRA_REPORTS
+        {   // velocidad angular (rad/s, antihorario +) derivada del yaw, con filtro
+          uint32_t now = g_bno.lastYawMs;
+          if(g_bno.rateT == 0 || now - g_bno.rateT > 100){ g_bno.rateYaw = g_bno.yawRaw; g_bno.rateT = now; g_bno.gyroZ = 0; }
+          else if(now - g_bno.rateT >= 8){
+            float dy = wrap180(g_bno.yawRaw - g_bno.rateYaw);
+            float r  = (dy * (PI/180.0f)) / ((now - g_bno.rateT) / 1000.0f);
+            g_bno.gyroZ = 0.6f*g_bno.gyroZ + 0.4f*r;
+            g_bno.rateYaw = g_bno.yawRaw; g_bno.rateT = now;
+          }
+        }
+#endif
         break;
+#if BNO_EXTRA_REPORTS
       case SH2_GYROSCOPE_CALIBRATED:
         g_bno.gyroZ = bnoEvent.un.gyroscope.z;
         break;
@@ -150,6 +199,7 @@ inline void bnoPoll(uint8_t maxEvents){
         g_bno.linAy = bnoEvent.un.linearAcceleration.y;
         g_bno.linAz = bnoEvent.un.linearAcceleration.z;
         break;
+#endif
       default: break;
     }
   }
@@ -191,6 +241,8 @@ inline float bnoRateDegS(){ return BNO_HEADING_SIGN * g_bno.gyroZ * (180.0f / PI
 // Define que el yaw actual equivale a `headingDeg`
 inline void bnoRebaseTo(float headingDeg){ g_bno.yawRef = g_bno.yawRaw - BNO_HEADING_SIGN * headingDeg; }
 inline void bnoZeroHeading(){ bnoRebaseTo(0.0f); }
+
+inline void bnoClearDiag(){ g_bno.maxGapMs = 0; g_bno.recoveries = 0; g_bno.resets = 0; g_bno.yawCount = 0; }
 
 // ── Recuperación en runtime (robot DETENIDO; bloquea ~1 s) ───
 // Power-cycle real. Deja el I2C libre mientras el BNO está apagado.

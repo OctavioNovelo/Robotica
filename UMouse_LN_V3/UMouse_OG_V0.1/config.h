@@ -8,13 +8,13 @@
 
 #if PROFILE == 1
   // Laberinto de prueba 3x7
-  #define MAZE_ROWS   2
-  #define MAZE_COLS   4
+  #define MAZE_ROWS   3
+  #define MAZE_COLS   7
   #define GOAL_ROW    0
-  #define GOAL_COL    0
-  #define MOUSE_ROW   0
-  #define MOUSE_COL   3
-  #define MOUSE_START_DIRECTION  4
+  #define GOAL_COL    6
+  #define MOUSE_ROW   2
+  #define MOUSE_COL   0
+  #define MOUSE_START_DIRECTION  1
 
 #else
   // Laberinto de competencia 19x17

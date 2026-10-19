@@ -51,6 +51,14 @@ static const uint8_t PIN_ARGB = 48;
 // ── I2C compartido OLED + BNO085 ─────────────────────────────
 static const uint8_t I2C_SDA = 41;
 static const uint8_t I2C_SCL = 42;
+// Reloj ÚNICO del bus. OJO: Adafruit_SSD1306 deja el bus en 100 kHz después de CADA
+// dibujo (clkAfter=100000 por defecto, verificado en la librería instalada), así que
+// el mismo valor se le pasa al constructor de la OLED (main.cpp). Si hay errores de
+// I2C por ruido/cables largos, bajar a 200000.
+static const uint32_t I2C_CLOCK_HZ = 400000;
+// Timeout por transacción (default del core: 50 ms). En un bus trabado, un dibujo de OLED
+// son ~70 transacciones: con 50 ms serían ~3.5 s de lazo congelado.
+static const uint16_t I2C_TIMEOUT_MS = 20;
 
 // ── BNO085 ───────────────────────────────────────────────────
 static const uint8_t PIN_BNO_INT = 18;    // salida del BNO -> entrada ESP32 (INPUT, sin pull-up)
