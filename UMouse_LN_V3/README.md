@@ -165,5 +165,3 @@ arranque escribe su motivo (`software`, `PANICO`, `BROWNOUT`…). Se pierde al q
    120 PWM (~750 mm/s) el robot necesita ~11 cm para frenar, así que al **explorar** frena a 300 mm/s
    en cada celda donde podría haber pared (con el mapa guardado no lo hace). Con frontales que vean más
    lejos (apuntados más al frente o con más potencia en el LED IR) podría explorar sin esos frenazos.
-6. **Mecánica: cable suelto.** El cable que sobresale arriba del robot se desconecta con los golpes. Hay
-   que fijarlo.
