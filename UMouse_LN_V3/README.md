@@ -29,8 +29,6 @@ src/
   main.cpp     menú, páginas de la OLED, NVS (mapa guardado), arranque de la corrida
 test/host/     pruebas de lógica en PC (FloodFill con laberintos reales, geometría, LEDs)
 UMouse_OG_V0.1/  firmware original de referencia (no se compila)
-Resultados/    videos de las pruebas
-CAMBIOS_Y_CALIBRACION.md  historial de cambios y plan de calibración
 ```
 
 ## Compilar y probar
@@ -98,6 +96,58 @@ Los modos 1 y 2 compilan y se conservan como respaldo para diagnóstico (por eje
 | `ARC_VREAD`, `CONFIRM_VMAX` | 400, 300 mm/s | topes de llegada (lectura temprana / confirmación) |
 | `CONFIRM_ONE_THR`, `CONFIRM_BOTH_MIN`, `CONFIRM_SOLO_THR` | 100, 30, 300 | regla ampliada de pared frontal |
 | `MOTOR_PWM_CAP` | 120 (en `motion.h`) | tope de PWM (~6 V del motor) |
+
+## Calibración
+Antes de cada sesión: batería ≥ 11.5 V. Primero con las ruedas en el aire (página DIAG) y luego en el
+suelo. Las calibraciones IR (centrado L/R y pivote) se guardan en NVS y **no** se borran al borrar el mapa.
+
+1. **Paso de celda (recta).** En `settings.h` pon `CAL_STRAIGHT_CELLS 5` (hacen falta 6 celdas rectas
+   libres) y compila. Con la parte trasera del robot contra la pared de salida, mantén 3 s en RUN: hace
+   el avance inicial y 5 celdas, frena y muestra `odo`. Mide con regla **D** (pared de salida → parte
+   trasera del robot) y **L** (paso real, de centro de poste a centro de poste). Entonces
+   `CELL_STEP_ADJ_MM = L × odo / D − CELL_FWD_MM`; el log `[CAL-RECTA]` imprime la fórmula con los
+   números. Repite 3 veces, promedia y vuelve a `CAL_STRAIGHT_CELLS 0`. No toques `WHEEL_DIAM_MM`,
+   `CELL_MM` ni `PRESHIFT_MM`: el paso de encoder actual (157.5 mm por celda) ya absorbe el diámetro real.
+2. **Centrado lateral (página IR).** Robot centrado entre dos paredes → mantener pulsado para guardar
+   la referencia L/R.
+3. **Pivote frontal (página CAL PIVOTE).** Eje de las ruedas en el centro de la celda con pared al
+   frente → mantener pulsado. Es el nivel IR en que el robot se detiene para girar en el sitio
+   (`[ALIGN] llego`). Si sale `tope-enc`, el pivote está mal calibrado.
+4. **Giros.** En `[GIRO-BNO]` el `err` debe quedar en ±3°. En `[ARCO]`, el `desfase max` debe quedar por
+   debajo de ~20° y no deben aparecer `FALLO`.
+5. **Exploración completa** con el mapa borrado: ida, vuelta e ida, con `[MAPA] guardado` 3 veces.
+   Compara el dibujo ASCII con el laberinto real. Después, una corrida con el mapa cargado:
+   `[RUN] mapa PREVIO (completo)` y una sola ida por el camino mínimo.
+
+Nota: `TURN_VOLTS` y `FWD_VOLTS` no son voltios reales: `pwmForVolts` los convierte a un PWM (4.5 ≈ 36).
+
+## Cómo leer el log
+| Línea | Qué indica |
+|---|---|
+| `[SCAN] FL FR L R -> F L R ... s=` | lectura de paredes. `F=0?` = lectura temprana, el frontal no alcanza |
+| `[CONFIRMA]` | lectura del frente antes de seguir recto o tras una media vuelta (`PARED: vuelve a decidir`) |
+| `[ARCO]` | pre-freno, radio, PWM de las ruedas, desfase y resultado (`hecho` / `FALLO`) |
+| `[APROX] llegada X (tope Y)` | velocidad al llegar a una lectura con tope |
+| `[FRENO-IR]` | el frontal vio la pared durante el avance y frenó por perfil |
+| `[HALT] sobrepaso` | cuánto se pasó al frenar |
+| `[ALIGN]`, `[PRESHIFT]`, `[GIRO-BNO]` | giro en el sitio: acercamiento por IR, ajuste y error final |
+| `[RELOC]` | pared frontal fuerte donde no se esperaba: corrige la posición |
+| `[META]` | acercamiento al centro de la celda objetivo |
+| `[MAPA] guardado / inalcanzable` | mapa ASCII al llegar a un objetivo o al fallar |
+| `[ATASCO]`, `[RUEDA] divergencia`, `[FALLO]` | atasco, rueda bloqueada o choque, parada segura |
+
+Ante un `[FALLO]` el robot se detiene sin actualizar las coordenadas (el mapa guardado queda intacto) y
+espera BOOT para reiniciar. El último `[POSE]` y `[FWD]`/`[ATASCO]` indican la causa.
+
+El log (los últimos 16 KB) vive en RAM y **sobrevive a un reinicio** por error, pánico o watchdog. Cada
+arranque escribe su motivo (`software`, `PANICO`, `BROWNOUT`…). Se pierde al quitar la alimentación.
+
+## LEDs y mapa guardado
+- **LEDs de pared:** azul = frente, blanco = izquierda, rojo = derecha (última lectura). El LED RGB
+  muestra el estado (avance, giro, pared, meta, error).
+- **Mapa (NVS):** se guarda al llegar a cada objetivo, con meta, inicio y si la exploración está
+  completa (ida + vuelta). Al cargar se comprueba que la meta sea alcanzable; si no lo es, la corrida no
+  arranca hasta borrar el mapa (mantener 5 s en RUN).
 
 ## Mejoras pendientes
 1. **Corrida rápida sin lecturas.** Con el mapa completo, el robot todavía lee paredes en cada celda
