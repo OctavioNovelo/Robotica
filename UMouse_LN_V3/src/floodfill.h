@@ -41,6 +41,9 @@ public:
         {
             int neighbors[4][2];
             int neighborCount = getNeighbors(maus->coords[0], maus->coords[1], neighbors);
+            // [cambio] empate de distancia: primero RECTO (antes el orden fijo N,E,S,O metía al robot en
+            // giros y medias vueltas innecesarias, p. ej. callejón aparente -> 180° hacia el norte con el sur libre).
+            preferStraight(maus->coords[0], maus->coords[1], dirDRow(maus->direction), dirDCol(maus->direction), neighbors, neighborCount);
 
             scanWalls(maus->coords[0], maus->coords[1]);
 
@@ -209,6 +212,7 @@ private:
             return true; // meta: para
         int neighbors[4][2];
         int count = getNeighbors(nr, nc, neighbors);
+        preferStraight(nr, nc, nr - r, nc - c, neighbors, count);
         for (int i = 0; i < count; i++)
         {
             int pr = neighbors[i][0];
@@ -290,6 +294,28 @@ private:
         if (col < 0 || col >= MAZE_COLS)
             return false;
         return true;
+    }
+
+    static int dirDRow(int dir) { return dir == 1 ? -1 : (dir == 3 ? 1 : 0); }
+    static int dirDCol(int dir) { return dir == 2 ? 1 : (dir == 4 ? -1 : 0); }
+
+    // Pone primero el vecino que queda recto (fila+dRow, col+dCol); el resto conserva el orden N,E,S,O.
+    static void preferStraight(int row, int col, int dRow, int dCol, int nb[4][2], int count)
+    {
+        for (int i = 1; i < count; i++)
+        {
+            if (nb[i][0] != row + dRow || nb[i][1] != col + dCol)
+                continue;
+            int sr = nb[i][0], sc = nb[i][1];
+            for (int j = i; j > 0; j--)
+            {
+                nb[j][0] = nb[j - 1][0];
+                nb[j][1] = nb[j - 1][1];
+            }
+            nb[0][0] = sr;
+            nb[0][1] = sc;
+            return;
+        }
     }
 
     int getNeighbors(int row, int col, int outNeighbors[4][2])

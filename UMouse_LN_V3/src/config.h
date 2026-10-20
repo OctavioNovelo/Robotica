@@ -7,18 +7,19 @@
 // =============================================================
 
 #if PROFILE == 1
-  #define MAZE_ROWS   3
-  #define MAZE_COLS   6
-  #define GOAL_ROW    0
-  #define GOAL_COL    5 
-  #define MOUSE_ROW   0
-  #define MOUSE_COL   3
+  // PRUEBA
+  #define MAZE_ROWS   5
+  #define MAZE_COLS   15
+  #define GOAL_ROW    2
+  #define GOAL_COL    0 
+  #define MOUSE_ROW   4
+  #define MOUSE_COL   14
   // Hacia dónde MIRA el robot al arrancar (convención de maus.h, coords = fila, columna):
   //   1 = Norte (fila-1)  2 = Este (col+1)  3 = Sur (fila+1)  4 = Oeste (col-1)
   #define MOUSE_START_DIRECTION  1
 
 #elif PROFILE == 2
-  // COMPETENCIA: pista real 9x19
+  // COMPETENCIA
   #define MAZE_ROWS   9
   #define MAZE_COLS   19
   #define GOAL_ROW    7
@@ -28,7 +29,7 @@
   #define MOUSE_START_DIRECTION  1
 
 #else
-  // ROBGAM (antiguo perfil 2)
+  // ROBGAM
   #define MAZE_ROWS   18
   #define MAZE_COLS   18
   #define GOAL_ROW    6

@@ -2,27 +2,25 @@
 
 // =============================================================
 //  UMouse — settings.h
-//  UN SOLO LUGAR para calibrar todo.
 //  Cambia PROFILE para alternar entre prueba, competencia y ROBGAM.
 // =============================================================
 
 // ── PERFIL ───────────────────────────────────────────────────
-// Cambia SOLO esta línea:
-//   1 = PRUEBAS     — laberinto 3x6, mismas medidas que COMPETENCIA (celda 162 mm cruz a cruz)
-//   2 = COMPETENCIA — pista real 9x19 (configuración validada el 2026-10-16 a FWD_PWM 75)
-//   3 = ROBGAM      — celdas de 190 mm, avance inicial 65 mm, laberinto 13x13 (ver config.h)
+//   1 = PRUEBAS     — Celdas de 140mm y laberinto 3x6.
+//   2 = COMPETENCIA — Celdas de 140mm y pista real 9x19.
+//   3 = ROBGAM      — Celdas de 180 mm.
 #define PROFILE  1
 
 // ── MODO DE NAVEGACIÓN ───────────────────────────────────────
-// Cambia SOLO esta línea:
 //   1 = sensores IR + encoders (lógica original probada; BNO solo informativo)
-//   2 = BNO085 únicamente (sin IR, sin encoders). LIMITADO: ver abajo
+//   2 = BNO085 únicamente (sin IR, sin encoders).
 //   3 = BNO085 referencia principal + IR/encoders de apoyo
 #define NAV_MODE  3
 
 #if NAV_MODE < 1 || NAV_MODE > 3
   #error "NAV_MODE debe ser 1, 2 o 3"
 #endif
+
 #define NAV_USE_ENC  (NAV_MODE != 2)   // encoders para distancia/atasco/giro
 #define NAV_USE_IR   (NAV_MODE != 2)   // IR para paredes y alineación
 #define NAV_USE_BNO  (NAV_MODE != 1)   // BNO para heading/giros
@@ -39,12 +37,11 @@
 #define BNO_STALE_MS       200     // sin muestra de yaw en este tiempo = dato viejo
 #define BNO_MAX_RECOVERIES 3       // power-cycles automáticos por arranque
 
-// Con BNO (NAV_MODE 2/3), cada cuánto se refresca la OLED con el compás en
-// vivo mientras el robot se mueve (ver navUiTick en motion.h).
+// Con BNO, el tiempo de refresca de la OLED con el compás en
+// vivo mientras el robot se mueve (navUiTick en motion.h).
 #define NAV_UI_REFRESH_MS  120
 // 1 = también refrescar la brújula DENTRO de los lazos de giro/aproximación a pared.
-// 0 (recomendado): un dibujo de OLED bloquea ~30 ms el lazo; en un giro a ~300°/s son
-// ~9° "a ciegas". La brújula se actualiza justo antes y después del giro.
+// 0 (recomendado): un dibujo de OLED bloquea ~30 ms el lazo; en un giro a ~300°/s son ~9° "a ciegas". La brújula se actualiza justo antes y después del giro.
 #define NAV_UI_IN_TURN     0
 
 // Deadman de motores: si los motores están activos y nadie les manda comando en este
@@ -127,7 +124,7 @@
 #if PROFILE == 1 || PROFILE == 2
   #define CELL_MM   160.0f   // PRUEBAS y COMPETENCIA (con CELL_STEP_ADJ_MM: celda real de 162 mm)
 #else
-  #define CELL_MM   190.0f   // ROBGAM (valor del antiguo perfil 2)
+  #define CELL_MM   200.0f   // ROBGAM (18cm)
 #endif
 
 // Preshift: distancia desde posición de reposo hasta eje de giro
