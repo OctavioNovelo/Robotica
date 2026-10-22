@@ -8,7 +8,7 @@
 
 #if PROFILE == 1
   // PRUEBA
-  #define MAZE_ROWS   5
+  #define MAZE_ROWS   7
   #define MAZE_COLS   15
   #define GOAL_ROW    2
   #define GOAL_COL    0 

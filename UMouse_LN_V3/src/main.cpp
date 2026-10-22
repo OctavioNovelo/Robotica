@@ -261,6 +261,9 @@ void drawBar(int x, int y, int w, int h, float frac){
 }
 
 void drawPageRun(float vbat){
+  // LEDs de pared en vivo también en la página principal (azul = frente, blanco = izq, rojo = der)
+  readIR();
+  wallLedsSet(wallFrontFromReadings(), irL >= IR_WALL_THR_L, irR >= IR_WALL_THR_R);
   oledHeader("RUN FLOODFILL");
   display.setCursor(0,12);
   display.print("Mapa: "); display.print(g_explored?"PREVIO":"NUEVO");
@@ -496,7 +499,7 @@ void drawPageDiag(float vbat){
 
 void drawCurrentPage(float vbat){
   if(millis() < g_toastUntil){ oledShow(g_toast1, g_toast2); return; }
-  if(g_page != PAGE_IR && g_page != PAGE_PIVOT) wallLedsOff();   // LEDs de pared: solo lecturas vigentes
+  if(g_page != PAGE_IR && g_page != PAGE_PIVOT && g_page != PAGE_RUN) wallLedsOff();   // LEDs de pared: solo lecturas vigentes
   switch(g_page){
     case PAGE_RUN:
       if(btn.down && (g_hold != HS_IDLE || btn.heldMs() >= 400)) drawRunHold(btn.heldMs());
