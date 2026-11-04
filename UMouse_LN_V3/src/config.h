@@ -10,9 +10,9 @@
   // PRUEBA
   #define MAZE_ROWS   7
   #define MAZE_COLS   15
-  #define GOAL_ROW    2
-  #define GOAL_COL    0 
-  #define MOUSE_ROW   4
+  #define GOAL_ROW    5
+  #define GOAL_COL    4
+  #define MOUSE_ROW   6
   #define MOUSE_COL   14
   // Hacia dónde MIRA el robot al arrancar (convención de maus.h, coords = fila, columna):
   //   1 = Norte (fila-1)  2 = Este (col+1)  3 = Sur (fila+1)  4 = Oeste (col-1)
@@ -22,7 +22,7 @@
   // COMPETENCIA
   #define MAZE_ROWS   9
   #define MAZE_COLS   19
-  #define GOAL_ROW    7
+  #define GOAL_ROW    6
   #define GOAL_COL    4
   #define MOUSE_ROW   8
   #define MOUSE_COL   18

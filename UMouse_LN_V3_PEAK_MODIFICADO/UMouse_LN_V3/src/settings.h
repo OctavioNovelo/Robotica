@@ -218,7 +218,7 @@
 // 12 V (2026-10-20; antes 9 V y 6 V): ~243 a 12.6 V, ~247 a 12.4 V y 255 (batería completa) con VBAT <= 12 V.
 // Con una 3S es prácticamente SIN límite. Motores N20 de 6 V nominales (al 200 %): vigilar temperatura y atascos.
 // MOTOR_PWM_CAP (motion.h) = 255 para que el límite sea este.
-#define V_MOTOR_LIMIT   12.0f  // voltaje máximo motores (V)
+#define V_MOTOR_LIMIT   13.0f  // voltaje máximo motores (V)
 #define MOTOR_KICK_MIN  30     // PWM mínimo para romper estática (0-255)
 
 // PWM de avance (0-255, relativo a la batería: NO cambia con V_MOTOR_LIMIT). 45 funcionó bien con batería 12.6V
